@@ -34,22 +34,25 @@ def normalize_score(value, min_val, max_val):
 # ------------------------------------------------------------
 def valuation_ratio_score(per, pbr, psr):
     """
-    PER/PBR/PSR 낮을수록 고득점.
-    PER: 5~40
-    PBR: 0.5~6
-    PSR: 1~20
-    """
-    per = safe(per, 40)
-    pbr = safe(pbr, 6)
-    psr = safe(psr, 20)
+    PER/PBR/PSR 낮을수록 고득점이지만,
+    요즘 빅테크 멀티플을 감안해 상단을 넓게 잡는다.
 
-    # per가 낮을수록 좋으니 (40 - per)를 정규화
-    per_score = normalize_score(40 - per, 0, 35)
-    pbr_score = normalize_score(6 - pbr, 0, 5.5)
-    psr_score = normalize_score(20 - psr, 0, 19)
+    PER: 10~60
+    PBR: 1~12
+    PSR: 2~30
+    """
+    per = safe(per, 60)
+    pbr = safe(pbr, 12)
+    psr = safe(psr, 30)
+
+    # 너무 싼 구간(밸류 트랩)도 있으니 PER 10 이하에선 점수 이득 적게
+    per_score = normalize_score(60 - per, 0, 50)   # 60 근처면 고평가, 20~30 중립 느낌
+    pbr_score = normalize_score(12 - pbr, 0, 10)
+    psr_score = normalize_score(30 - psr, 0, 25)
 
     total = (per_score * 0.5) + (pbr_score * 0.3) + (psr_score * 0.2)
-    return total  # 0~100 근사
+    return total
+
 
 
 # ------------------------------------------------------------

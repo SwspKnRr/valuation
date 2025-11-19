@@ -18,19 +18,20 @@ MODEL_PROFILES = {
 
     "bluechip": {
     "name": "우량주 기준 (빅테크용)",
-    # ▶ 할인율을 낮추고, 성장률을 조금 더 높게
-    "discount_rate": 0.07,   # 0.085 → 0.07
-    "g1": 0.12,              # 10% → 12% (앞 5년)
-    "g2": 0.06,              # 5%  → 6%  (그 다음 5년)
-    "terminal": 0.035,       # 3%  → 3.5%
+    # ▶ 시장 프리미엄 감안해서 할인율/성장률 완화
+    "discount_rate": 0.07,   # 7%
+    "g1": 0.12,              # 첫 5년 12%
+    "g2": 0.06,              # 다음 5년 6%
+    "terminal": 0.035,       # 영구 3.5%
 
-    # ▶ DCF 비중도 살짝 줄이고, 성장성/수익성 비중↑
-    "dcf_weight": 0.15,      # 0.20 → 0.15
+    # ▶ DCF 비중↓, 성장·수익성 비중↑
+    "dcf_weight": 0.10,      # 0.20 → 0.10
     "ratio_weight": 0.25,
     "growth_weight": 0.30,   # 0.25 → 0.30
-    "profit_weight": 0.20,
+    "profit_weight": 0.25,   # 0.20 → 0.25
     "stability_weight": 0.10,
     },
+
 
 
     "hypergrowth": {

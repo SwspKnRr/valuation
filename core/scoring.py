@@ -1,9 +1,9 @@
 def final_score(fundamental: float, momentum: float, risk: float):
     """
-    3개 점수를 받아 최종 0~100 점수 반환
-    fundamental, momentum, risk: 0~100
+    시장 친화 버전:
+    - 모멘텀 비중 강화 (단기/중기 실제 수익률 반영)
+    - 펀더멘탈은 3분의 1 정도로
     """
-
     if fundamental is None:
         fundamental = 50
     if momentum is None:
@@ -12,12 +12,13 @@ def final_score(fundamental: float, momentum: float, risk: float):
         risk = 50
 
     score = (
-        fundamental * 0.45 +
-        momentum * 0.35 +
-        risk * 0.20
+        fundamental * 0.35 +   # 45 → 35
+        momentum * 0.40 +      # 35 → 40
+        risk * 0.25            # 20 → 25
     )
 
     return min(max(score, 0), 100)
+
 
 
 def signal_from_score(score: float):
