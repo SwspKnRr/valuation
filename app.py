@@ -124,9 +124,9 @@ if st.button("데이터 불러오기 🔍"):
                 st.metric("적정 가치(Fair Value)", round(float(fv), 2))
                 if current_price is not None:
                     diff = (float(fv) - float(current_price)) / float(current_price) * 100
-                    st.metric("저평가율", f"{diff:.2f} %")
+                    st.metric("괴리율 (＋ 저평가 / − 고평가)", f"{diff:.2f} %")
             except Exception:
-                st.info("적정가 또는 현재가가 숫자가 아니라서 저평가율 계산을 생략합니다.")
+                st.info("적정가 또는 현재가가 숫자가 아니라서 계산을 생략합니다.")
 
         # 가격 vs 적정가 비교 차트
         import math
