@@ -1,5 +1,9 @@
+# core/valuation.py
+
 import numpy as np
 import pandas as pd
+
+from core.model_profiles import MODEL_PROFILES
 
 
 # ------------------------------------------------------------
@@ -35,13 +39,12 @@ def valuation_ratio_score(per, pbr, psr):
     PBR: 0.5~6
     PSR: 1~20
     """
-
-    # per가 낮을수록 좋으니 (40 - per)를 정규화
     per = safe(per, 40)
     pbr = safe(pbr, 6)
     psr = safe(psr, 20)
 
-    per_score = normalize_score(40 - per, 0, 35)   # 역변환
+    # per가 낮을수록 좋으니 (40 - per)를 정규화
+    per_score = normalize_score(40 - per, 0, 35)
     pbr_score = normalize_score(6 - pbr, 0, 5.5)
     psr_score = normalize_score(20 - psr, 0, 19)
 
@@ -66,11 +69,10 @@ def growth_score(eps_series: pd.Series | None,
     EPS 3년/5년 CAGR (지금은 eps_series 없으니 사실상 FCF 위주)
     FCF 5년 CAGR
     """
-
     eps_score = 0
     fcf_score = 0
 
-    # EPS 쪽은 지금은 API에서 시계열을 못 가져오니 비워두는 형태
+    # EPS (추후 확장용)
     if eps_series is not None:
         eps_clean = eps_series.dropna()
         if len(eps_clean) >= 2:
@@ -83,7 +85,6 @@ def growth_score(eps_series: pd.Series | None,
     if fcf_series is not None:
         fcf_clean = fcf_series.dropna()
         if len(fcf_clean) >= 2:
-            # 5년치 이상 있으면 5년 CAGR, 아니면 마지막 2개로 근사
             if len(fcf_clean) >= 5:
                 fcf_cagr_val = cagr(fcf_clean.iloc[-5], fcf_clean.iloc[-1], 5)
             else:
@@ -108,7 +109,7 @@ def profitability_score(roe, op_margin):
     op_margin = safe(op_margin, 0)
 
     # roe, op_margin이 비율(0.x)로 들어올 수도 있으니 100x 처리
-    if abs(roe) < 1:      # 0.32 같은 값
+    if abs(roe) < 1:
         roe *= 100
     if abs(op_margin) < 1:
         op_margin *= 100
@@ -129,7 +130,6 @@ def stability_score(total_debt, total_cash, market_cap):
     부채 < 시총 * 20% → 매우 안전 (고득점)
     부채 = 시총과 비슷 → 위험 (저득점)
     """
-
     total_debt = safe(total_debt, None)
     market_cap = safe(market_cap, None)
 
@@ -137,13 +137,12 @@ def stability_score(total_debt, total_cash, market_cap):
         return 50  # 정보 부족 → 중간 점수
 
     debt_ratio = total_debt / market_cap  # 높을수록 위험
-    # 낮을수록 안전 → (0.5 - ratio)를 정규화
     score = normalize_score(0.5 - debt_ratio, -0.5, 0.5)
     return score
 
 
 # ------------------------------------------------------------
-# 5. DCF (간소화)
+# 5. DCF (모드별 파라미터 사용 가능)
 # ------------------------------------------------------------
 def dcf_fair_value(
     fcf_series: pd.Series,
@@ -162,10 +161,7 @@ def dcf_fair_value(
     Phase 1: years1년 성장 g1
     Phase 2: years2년 성장 g2
     Terminal: 영구 성장률
-
-    fcf_series: 최근 FCF 시계열 (가장 마지막 값이 최신)
     """
-
     if fcf_series is None:
         return None
 
@@ -192,7 +188,6 @@ def dcf_fair_value(
     # Terminal Value
     fcf_terminal_start = fcf_end_phase1 * ((1 + g2) ** years2)
     if discount_rate <= terminal_growth:
-        # 비정상적인 경우 → Terminal 계산 불가
         return None
 
     terminal_value = (
@@ -203,10 +198,7 @@ def dcf_fair_value(
         (1 + discount_rate) ** (years1 + years2)
     )
 
-    # Total enterprise value
     enterprise_value = sum(fcf_phase1) + sum(fcf_phase2) + terminal_value_pv
-
-    # Equity value 조정 (현금 +, 부채 -)
     equity_value = enterprise_value + safe(total_cash, 0) - safe(total_debt, 0)
 
     if shares_outstanding is None or shares_outstanding <= 0:
@@ -217,19 +209,14 @@ def dcf_fair_value(
 
 
 # ------------------------------------------------------------
-# 6. 최종 Fundamental Score 계산
+# 6. 최종 Fundamental Score (모드별 프로필 적용)
 # ------------------------------------------------------------
-from core.model_profiles import MODEL_PROFILES
-
-
-def fundamental_score(data: dict, mode="bluechip"):
+def fundamental_score(data: dict, mode: str = "bluechip"):
     """
-    mode: conservative / bluechip / hypergrowth
+    mode: "conservative" / "bluechip" / "hypergrowth"
     """
 
-    # ------------------------------------------------------
-    # 1) 프로필 로드
-    # ------------------------------------------------------
+    # ----------------- 프로필 로드 -----------------
     profile = MODEL_PROFILES.get(mode, MODEL_PROFILES["bluechip"])
 
     discount_rate = profile["discount_rate"]
@@ -245,18 +232,14 @@ def fundamental_score(data: dict, mode="bluechip"):
 
     info = data.get("info", {})
 
-    # ------------------------------------------------------
-    # 2) 상대가치
-    # ------------------------------------------------------
+    # ----------------- 1) 상대가치 -----------------
     ratio = valuation_ratio_score(
         data.get("per"),
         data.get("pbr"),
         data.get("psr"),
     )
 
-    # ------------------------------------------------------
-    # 3) 성장성(Fcf-fallback 적용)
-    # ------------------------------------------------------
+    # ----------------- 2) 성장성 -------------------
     eps_series = None
     fcf_series = data.get("fcf")
 
@@ -269,25 +252,19 @@ def fundamental_score(data: dict, mode="bluechip"):
 
     growth = growth_score(eps_series, fcf_series)
 
-    # ------------------------------------------------------
-    # 4) 수익성
-    # ------------------------------------------------------
+    # ----------------- 3) 수익성 -------------------
     roe = info.get("returnOnEquity")
     opm = info.get("operatingMargins")
     profit = profitability_score(roe, opm)
 
-    # ------------------------------------------------------
-    # 5) 안정성
-    # ------------------------------------------------------
+    # ----------------- 4) 안정성 -------------------
     stability = stability_score(
         data.get("total_debt"),
         data.get("total_cash"),
         data.get("market_cap"),
     )
 
-    # ------------------------------------------------------
-    # 6) DCF
-    # ------------------------------------------------------
+    # ----------------- 5) DCF ----------------------
     fair = dcf_fair_value(
         fcf_series=fcf_series,
         shares_outstanding=data.get("shares_outstanding"),
@@ -302,12 +279,10 @@ def fundamental_score(data: dict, mode="bluechip"):
     dcf_score = 0
     cp = data.get("current_price")
     if fair is not None and cp is not None and cp > 0:
-        diff = (fair - cp) / cp
+        diff = (fair - cp) / cp   # +면 저평가, -면 고평가
         dcf_score = normalize_score(diff, -0.5, 0.5)
 
-    # ------------------------------------------------------
-    # 7) 총합
-    # ------------------------------------------------------
+    # ----------------- 6) 총합 ---------------------
     total = (
         ratio * w_ratio +
         growth * w_growth +
@@ -317,5 +292,4 @@ def fundamental_score(data: dict, mode="bluechip"):
     )
 
     total = min(max(total, 0), 100)
-
     return total, fair
