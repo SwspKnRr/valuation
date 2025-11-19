@@ -2,6 +2,8 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import matplotlib
 import numpy as np
+from core.calibration import calibrate_discount_rate
+
 
 # 한글 폰트: 굴림
 matplotlib.rcParams["font.family"] = "Gulim"
@@ -30,20 +32,44 @@ st.set_page_config(
 st.title("📈 종합 가치평가 시스템 (Fundamental + Momentum + Risk)")
 st.write("기업의 가치, 가격 흐름, 리스크를 한 번에 분석하는 시스템입니다.")
 
+ticker = st.text_input("종목 티커 입력 (예: AAPL, MSFT, TSLA)", value="AAPL")
+
 mode = st.selectbox(
     "가치평가 모드 선택",
     ["conservative", "bluechip", "hypergrowth"],
     format_func=lambda m: {
         "conservative": "보수적",
-        "bluechip": "우량주 기준",
+        "bluechip": "일반 우량주",
         "hypergrowth": "고성장"
     }[m]
 )
 
-# ---------------------------------------------------------
-# 티커 입력 UI
-# ---------------------------------------------------------
-ticker = st.text_input("종목 티커 입력 (예: AAPL, MSFT, TSLA)", value="AAPL")
+st.markdown("#### 🛠 캘리브레이션 (시장 레벨 맞추기)")
+calib_input = st.text_input(
+    "캘리브레이션 기준 종목 (쉼표로 구분, 예: AAPL, MSFT, SPY)",
+    value="AAPL, MSFT, SPY",
+    key="calib_tickers",
+)
+
+col_calib_btn, col_calib_info = st.columns([1, 3])
+
+with col_calib_btn:
+    if st.button("이 모드 캘리브레이션 실행"):
+        ref_list = [x.strip() for x in calib_input.split(",") if x.strip()]
+        tuned = calibrate_discount_rate(ref_list, mode=mode)
+        if tuned is None:
+            st.error("캘리브레이션 실패: 기준 종목들의 DCF를 계산할 수 없습니다.")
+        else:
+            st.session_state[f"tuned_discount_{mode}"] = tuned
+            st.success(f"{mode} 모드 할인율을 {tuned:.4f} 로 캘리브레이션했습니다.")
+
+with col_calib_info:
+    current_tuned = st.session_state.get(f"tuned_discount_{mode}", None)
+    if current_tuned is not None:
+        st.write(f"현재 **{mode} 모드** 적용 할인율: `{current_tuned:.4f}`")
+    else:
+        st.write("아직 이 모드에 대해 캘리브레이션이 적용되지 않았습니다.")
+
 
 if st.button("데이터 불러오기 🔍"):
     with st.spinner("데이터 불러오는 중..."):
@@ -81,9 +107,13 @@ if st.button("데이터 불러오기 🔍"):
     # ---------------------------------------------------------
     # Score 계산
     # ---------------------------------------------------------
-    f_score, fair_value = fundamental_score(data, mode=mode)
+    # 세션에 저장된 캘리브레이션 할인율 가져오기 (없으면 None)
+    discount_override = st.session_state.get(f"tuned_discount_{mode}", None)
+
+    f_score, fair_value = fundamental_score(data, mode=mode, discount_override=discount_override)
     m_score = momentum_score(data)
     r_score = risk_score(data)
+
     final_result = full_scoring_pipeline(f_score, m_score, r_score)
 
     # ---------------------------------------------------------

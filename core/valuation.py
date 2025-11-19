@@ -214,15 +214,18 @@ def dcf_fair_value(
 # ------------------------------------------------------------
 # 6. 최종 Fundamental Score (모드별 프로필 적용)
 # ------------------------------------------------------------
-def fundamental_score(data: dict, mode: str = "bluechip"):
+# core/valuation.py 의 제일 아래 부분만 교체
+
+def fundamental_score(data: dict, mode: str = "bluechip", discount_override=None):
     """
     mode: "conservative" / "bluechip" / "hypergrowth"
+    discount_override: 캘리브레이션 등으로 외부에서 할인율 강제 설정할 때 사용
     """
 
     # ----------------- 프로필 로드 -----------------
     profile = MODEL_PROFILES.get(mode, MODEL_PROFILES["bluechip"])
 
-    discount_rate = profile["discount_rate"]
+    discount_rate = discount_override if discount_override is not None else profile["discount_rate"]
     g1 = profile["g1"]
     g2 = profile["g2"]
     terminal_growth = profile["terminal"]
