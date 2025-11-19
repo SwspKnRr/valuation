@@ -106,18 +106,36 @@ if st.button("데이터 불러오기 🔍"):
     with tab1:
         st.subheader("📊 Fundamental 상세")
 
-        if fair_value is not None:
-            st.metric("적정 가치(Fair Value)", round(fair_value, 2))
-            if data["current_price"]:
-                diff = (fair_value - data["current_price"]) / data["current_price"] * 100
-                st.metric("저평가율", f"{diff:.2f} %")
+        current_price = data.get("current_price")
+        fv = fair_value
+
+        # 적정가 / 저평가율 메트릭
+        if fv is not None:
+            try:
+                st.metric("적정 가치(Fair Value)", round(float(fv), 2))
+                if current_price is not None:
+                    diff = (float(fv) - float(current_price)) / float(current_price) * 100
+                    st.metric("저평가율", f"{diff:.2f} %")
+            except Exception:
+                st.info("적정가 또는 현재가가 숫자가 아니라서 저평가율 계산을 생략합니다.")
 
         # 가격 vs 적정가 비교 차트
-        if data["current_price"]:
+        import math
+
+        if (
+            current_price is not None
+            and fv is not None
+            and isinstance(current_price, (int, float))
+            and isinstance(fv, (int, float))
+            and not math.isnan(current_price)
+            and not math.isnan(fv)
+        ):
             fig, ax = plt.subplots()
-            ax.bar(["현재주가", "적정가"], [data["current_price"], fair_value])
+            ax.bar(["현재주가", "적정가"], [current_price, fv])
             ax.set_title("현재 주가 vs 적정 가치")
             st.pyplot(fig)
+        else:
+            st.info("현재가 또는 적정가 데이터가 없어서 막대 그래프를 생략합니다.")
 
         st.write("---")
         st.write("**기본 정보(info)**")
