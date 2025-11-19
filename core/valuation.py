@@ -219,75 +219,103 @@ def dcf_fair_value(
 # ------------------------------------------------------------
 # 6. 최종 Fundamental Score 계산
 # ------------------------------------------------------------
-def fundamental_score(data: dict):
+from core.model_profiles import MODEL_PROFILES
+
+
+def fundamental_score(data: dict, mode="bluechip"):
     """
-    fetch_data.py에서 받아온 'data' dict 입력
-    → (Fundamental Score 0~100, Fair Value) 반환
+    mode: conservative / bluechip / hypergrowth
     """
+
+    # ------------------------------------------------------
+    # 1) 프로필 로드
+    # ------------------------------------------------------
+    profile = MODEL_PROFILES.get(mode, MODEL_PROFILES["bluechip"])
+
+    discount_rate = profile["discount_rate"]
+    g1 = profile["g1"]
+    g2 = profile["g2"]
+    terminal_growth = profile["terminal"]
+
+    w_ratio = profile["ratio_weight"]
+    w_growth = profile["growth_weight"]
+    w_profit = profile["profit_weight"]
+    w_stab = profile["stability_weight"]
+    w_dcf = profile["dcf_weight"]
 
     info = data.get("info", {})
 
-    # 1) 상대가치
+    # ------------------------------------------------------
+    # 2) 상대가치
+    # ------------------------------------------------------
     ratio = valuation_ratio_score(
         data.get("per"),
         data.get("pbr"),
         data.get("psr"),
     )
 
-    # 2) 성장성 (EPS는 일단 None, FCF 위주)
-    eps_series = None  # yfinance로는 EPS 시계열이 없어서 확장용 슬롯만
+    # ------------------------------------------------------
+    # 3) 성장성(Fcf-fallback 적용)
+    # ------------------------------------------------------
+    eps_series = None
     fcf_series = data.get("fcf")
 
-    # 🔥 FCF 시계열이 없으면 info["freeCashflow"]를 fallback으로 사용
     if fcf_series is None or (
-        hasattr(fcf_series, "dropna")
-        and len(fcf_series.dropna()) == 0
+        hasattr(fcf_series, "dropna") and len(fcf_series.dropna()) == 0
     ):
-        fcf_last = info.get("freeCashflow")
-        if fcf_last is not None:
-            # 최근 FCF 하나만이라도 시리즈로 만들어 사용
-            fcf_series = pd.Series([fcf_last])
+        fallback_fcf = info.get("freeCashflow")
+        if fallback_fcf:
+            fcf_series = pd.Series([fallback_fcf])
 
     growth = growth_score(eps_series, fcf_series)
 
-    # 3) 수익성
-    roe = info.get("returnOnEquity", None)
-    opm = info.get("operatingMargins", None)
+    # ------------------------------------------------------
+    # 4) 수익성
+    # ------------------------------------------------------
+    roe = info.get("returnOnEquity")
+    opm = info.get("operatingMargins")
     profit = profitability_score(roe, opm)
 
-    # 4) 안정성
+    # ------------------------------------------------------
+    # 5) 안정성
+    # ------------------------------------------------------
     stability = stability_score(
         data.get("total_debt"),
         data.get("total_cash"),
         data.get("market_cap"),
     )
 
-    # 5) DCF 평가
+    # ------------------------------------------------------
+    # 6) DCF
+    # ------------------------------------------------------
     fair = dcf_fair_value(
         fcf_series=fcf_series,
         shares_outstanding=data.get("shares_outstanding"),
-        discount_rate=0.10,  # 기본 10%, 나중에 UI에서 조정 가능
+        discount_rate=discount_rate,
+        g1=g1,
+        g2=g2,
+        terminal_growth=terminal_growth,
         total_debt=data.get("total_debt"),
         total_cash=data.get("total_cash"),
     )
 
     dcf_score = 0
-    current_price = data.get("current_price")
-    if fair is not None and current_price is not None and current_price > 0:
-        diff = (fair - current_price) / current_price  # +면 저평가
-        # -50% 고평가 ~ +50% 저평가 구간에서 스코어링
+    cp = data.get("current_price")
+    if fair is not None and cp is not None and cp > 0:
+        diff = (fair - cp) / cp
         dcf_score = normalize_score(diff, -0.5, 0.5)
 
-    # ------------------------------------------------------------
-    # 가중합 → Fundamental Score
-    # ------------------------------------------------------------
-    total_score = (
-        ratio * 0.25 +
-        growth * 0.20 +
-        profit * 0.20 +
-        stability * 0.10 +
-        dcf_score * 0.25
+    # ------------------------------------------------------
+    # 7) 총합
+    # ------------------------------------------------------
+    total = (
+        ratio * w_ratio +
+        growth * w_growth +
+        profit * w_profit +
+        stability * w_stab +
+        dcf_score * w_dcf
     )
 
-    total_score = min(max(total_score, 0), 100)
-    return total_score, fair
+    total = min(max(total, 0), 100)
+
+    return total, fair

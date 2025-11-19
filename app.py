@@ -30,6 +30,15 @@ st.set_page_config(
 st.title("📈 종합 가치평가 시스템 (Fundamental + Momentum + Risk)")
 st.write("기업의 가치, 가격 흐름, 리스크를 한 번에 분석하는 시스템입니다.")
 
+mode = st.selectbox(
+    "가치평가 모드 선택",
+    ["conservative", "bluechip", "hypergrowth"],
+    format_func=lambda m: {
+        "conservative": "보수적",
+        "bluechip": "우량주 기준",
+        "hypergrowth": "고성장"
+    }[m]
+)
 
 # ---------------------------------------------------------
 # 티커 입력 UI
@@ -72,7 +81,7 @@ if st.button("데이터 불러오기 🔍"):
     # ---------------------------------------------------------
     # Score 계산
     # ---------------------------------------------------------
-    f_score, fair_value = fundamental_score(data)
+    f_score, fair_value = fundamental_score(data, mode=mode)
     m_score = momentum_score(data)
     r_score = risk_score(data)
     final_result = full_scoring_pipeline(f_score, m_score, r_score)
