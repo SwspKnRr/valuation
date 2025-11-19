@@ -1,5 +1,3 @@
-# core/valuation.py
-
 import numpy as np
 import pandas as pd
 
@@ -31,12 +29,14 @@ def normalize_score(value, min_val, max_val):
 
 # ------------------------------------------------------------
 # 1. 상대가치 점수 (PER, PBR, PSR)
+#    → 요즘 빅테크 멀티플 감안해서 범위 약간 완화 버전
 # ------------------------------------------------------------
 def valuation_ratio_score(per, pbr, psr):
     """
     PER/PBR/PSR 낮을수록 고득점이지만,
-    요즘 빅테크 멀티플을 감안해 상단을 넓게 잡는다.
+    요즘 시장 멀티플을 감안하여 상단을 넓게 잡는다.
 
+    대략 감각:
     PER: 10~60
     PBR: 1~12
     PSR: 2~30
@@ -45,14 +45,13 @@ def valuation_ratio_score(per, pbr, psr):
     pbr = safe(pbr, 12)
     psr = safe(psr, 30)
 
-    # 너무 싼 구간(밸류 트랩)도 있으니 PER 10 이하에선 점수 이득 적게
-    per_score = normalize_score(60 - per, 0, 50)   # 60 근처면 고평가, 20~30 중립 느낌
+    # 너무 싼 구간(밸류 트랩)도 있으니 PER 10 이하에서 득점 이득은 제한
+    per_score = normalize_score(60 - per, 0, 50)
     pbr_score = normalize_score(12 - pbr, 0, 10)
     psr_score = normalize_score(30 - psr, 0, 25)
 
     total = (per_score * 0.5) + (pbr_score * 0.3) + (psr_score * 0.2)
-    return total
-
+    return total  # 0~100 근사
 
 
 # ------------------------------------------------------------
@@ -212,10 +211,51 @@ def dcf_fair_value(
 
 
 # ------------------------------------------------------------
-# 6. 최종 Fundamental Score (모드별 프로필 적용)
+# 5-1. FCF 수익률 기반 적정가 (새로 추가)
 # ------------------------------------------------------------
-# core/valuation.py 의 제일 아래 부분만 교체
+def fcf_yield_fair_value(
+    fcf_series: pd.Series,
+    shares_outstanding: int,
+    mode: str = "bluechip",
+):
+    """
+    최근 FCF 기준으로, 모드별 '목표 수익률'을 가정해
+    FCF 수익률 기반 적정가를 계산한다.
 
+    보수적: 목표 8% → 멀티플 12.5배
+    우량주: 목표 5% → 멀티플 20배
+    고성장: 목표 4% → 멀티플 25배
+    """
+    if fcf_series is None:
+        return None
+
+    fcf_clean = fcf_series.dropna()
+    if len(fcf_clean) == 0:
+        return None
+
+    if shares_outstanding is None or shares_outstanding <= 0:
+        return None
+
+    fcf_last = fcf_clean.iloc[-1]
+    fcf_per_share = fcf_last / shares_outstanding
+
+    if mode == "conservative":
+        target_yield = 0.08
+    elif mode == "hypergrowth":
+        target_yield = 0.04
+    else:  # bluechip
+        target_yield = 0.05
+
+    if target_yield <= 0:
+        return None
+
+    fair_value = fcf_per_share / target_yield
+    return fair_value
+
+
+# ------------------------------------------------------------
+# 6. 최종 Fundamental Score (모드 + 캘리브레이션 할인율 + 블렌딩 적정가)
+# ------------------------------------------------------------
 def fundamental_score(data: dict, mode: str = "bluechip", discount_override=None):
     """
     mode: "conservative" / "bluechip" / "hypergrowth"
@@ -270,10 +310,12 @@ def fundamental_score(data: dict, mode: str = "bluechip", discount_override=None
         data.get("market_cap"),
     )
 
-    # ----------------- 5) DCF ----------------------
-    fair = dcf_fair_value(
+    # ----------------- 5) 적정가 계산 (DCF + FCF Yield 블렌드) -------------------
+    shares_outstanding = data.get("shares_outstanding")
+
+    fair_dcf = dcf_fair_value(
         fcf_series=fcf_series,
-        shares_outstanding=data.get("shares_outstanding"),
+        shares_outstanding=shares_outstanding,
         discount_rate=discount_rate,
         g1=g1,
         g2=g2,
@@ -282,6 +324,22 @@ def fundamental_score(data: dict, mode: str = "bluechip", discount_override=None
         total_cash=data.get("total_cash"),
     )
 
+    fair_yield = fcf_yield_fair_value(
+        fcf_series=fcf_series,
+        shares_outstanding=shares_outstanding,
+        mode=mode,
+    )
+
+    fair = None
+    if fair_dcf is not None and fair_yield is not None:
+        # 둘 다 있으면 50:50 블렌딩
+        fair = 0.5 * fair_dcf + 0.5 * fair_yield
+    elif fair_dcf is not None:
+        fair = fair_dcf
+    elif fair_yield is not None:
+        fair = fair_yield
+
+    # 이 fair를 기준으로 괴리율 점수 계산 (이름은 dcf_score지만 이제 블렌딩 기준)
     dcf_score = 0
     cp = data.get("current_price")
     if fair is not None and cp is not None and cp > 0:
