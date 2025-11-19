@@ -47,7 +47,7 @@ mode = st.selectbox(
 st.markdown("#### 🛠 캘리브레이션 (시장 레벨 맞추기)")
 calib_input = st.text_input(
     "캘리브레이션 기준 종목 (쉼표로 구분, 예: AAPL, MSFT, SPY)",
-    value="AAPL, MSFT, SPY",
+    value="NVDA, AVGO, AMZN, TSLA, GOOGL, GOOG, META, AAPL, MSFT, SPY",
     key="calib_tickers",
 )
 
